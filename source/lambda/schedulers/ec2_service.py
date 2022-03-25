@@ -215,7 +215,7 @@ class Ec2Service:
                 execution_time = datetime.strptime(window['NextExecutionTime'], "%Y-%m-%dT%H:%MZ")
                 window['ScheduleTimezone'] = "UTC"
 
-            tz = pytz.timezone(window['ScheduleTimezone'])    
+            tz = pytz.timezone(window['ScheduleTimezone'])
             window_begin_time = execution_time.replace(tzinfo=tz)
             window_end_time = execution_time.replace(tzinfo=tz) + timedelta(hours=int(duration))
             current_time = datetime.now(tz).replace(tzinfo=tz)
@@ -309,6 +309,39 @@ class Ec2Service:
 
         return self._ssm_maintenance_windows
 
+    def get_autoscaling_groups(self, kwargs):
+        self._session = kwargs[schedulers.PARAM_SESSION]
+        context = kwargs[schedulers.PARAM_CONTEXT]
+        region = kwargs[schedulers.PARAM_REGION]
+        account = kwargs[schedulers.PARAM_ACCOUNT]
+        self._logger = kwargs[schedulers.PARAM_LOGGER]
+        tagname = kwargs[schedulers.PARAM_CONFIG].tag_name
+        config = kwargs[schedulers.PARAM_CONFIG]
+
+        client = get_client_with_retries("ec2", ["describe_instances"], context=context, session=self._session,
+                                         region=region)
+
+        jmespath_autoscaling = "Reservations[*].Instances[*].{InstanceId:InstanceId, EbsOptimized:EbsOptimized, Tags:Tags," \
+        "InstanceType:InstanceType,State:State}[]" \
+        "|[?Tags]|[?contains(Tags[*].Key, 'aws:autoscaling:groupName')]"
+
+        asg_set = set()
+        while not done:
+
+            ec2_resp = client.describe_instances_with_retries(**args)
+            for reservation_inst in jmespath.search(jmespath_autoscaling, ec2_resp):
+                for tag in reservation_inst.get('Tags'):
+                    if tag.get("Key") == 'aws:autoscaling:groupName':
+                        asg_set.add(tag.get("Value"))
+
+            if "NextToken" in ec2_resp:
+                args["NextToken"] = ec2_resp["NextToken"]
+            else:
+                done = True
+
+        return asg_set
+
+
     # get instances and handle paging
     def get_schedulable_instances(self, kwargs):
         self._session = kwargs[schedulers.PARAM_SESSION]
@@ -322,7 +355,7 @@ class Ec2Service:
         self.schedules_with_hibernation = [s.name for s in config.schedules.values() if s.hibernate]
 
         self._logger.info("Enable SSM Maintenance window is set to {}", config.enable_SSM_maintenance_windows)
-        if config.enable_SSM_maintenance_windows: 
+        if config.enable_SSM_maintenance_windows:
             # calling the get maintenance window for this account and region.
             self._logger.debug("load the ssm maintenance windows for account {}, and region {}", account, region)
             self._ssm_maintenance_windows = self.ssm_maintenance_windows(self._session, context, account, region)
