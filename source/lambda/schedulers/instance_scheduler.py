@@ -242,6 +242,7 @@ class InstanceScheduler:
         inst_state, inst_type, _ = schedule.get_desired_state(instance, logger=self._logger)
         return inst_state, inst_type
 
+
     def _process_account(self, account):
 
         # processes instances for a service in an account
@@ -263,6 +264,17 @@ class InstanceScheduler:
             self._scheduler_start_list = []
             self._scheduler_stop_list = []
             self._schedule_resize_list = []
+
+                # for asg in self._service.get_autoscaling_groups(
+                #     schedulers.PARAM_SESSION: account.session,
+                #     schedulers.PARAM_ACCOUNT: account.name,
+                #     schedulers.PARAM_ROLE: account.role,
+                #     schedulers.PARAM_REGION: region,
+                #     schedulers.PARAM_CONFIG: self._configuration,
+                #     schedulers.PARAM_LOGGER: self._logger,
+                #     schedulers.PARAM_CONTEXT: self._context
+                # ):
+                # yamini's awesome code
 
             for instance in self._scheduled_instances_in_region(account, region):
 
@@ -294,6 +306,19 @@ class InstanceScheduler:
 
                 # based on the schedule get the desired state and instance type for this instance
                 desired_state, desired_type = self.get_desired_state_and_type(instance_schedule, instance)
+
+                # insert logic here
+                asg_set = set([ tag.get('value') for tag in instance.get("Tags") if tag.get('Key') == "aws:autoscaling:groupName" ])
+                autoscaling = self._accounts.session.client('autoscaling')
+                for asg in asg_set:
+                    if desired_state == InstanceSchedule.STATE_STOPPED:
+                        autoscaling.enter_standby(
+                            AutoScalingGroupName = asg
+                        )
+                    elif desired_state == InstanceSchedule.STATE_RUNNING:
+                        autoscaling.exit_standby(
+                            AutoScalingGroupName = asg
+                        )
 
                 # get the  previous desired instance state
                 last_desired_state = self._instance_states.get_instance_state(instance.id)
@@ -385,7 +410,7 @@ class InstanceScheduler:
                         "Instances": self._usage_metrics[action][instance_type],
 
                     })
-                    
+
             send_metrics_data(usage_data, logger=self._logger)
 
     def _collect_usage_metrics(self):
