@@ -307,7 +307,7 @@ class InstanceScheduler:
                 # based on the schedule get the desired state and instance type for this instance
                 desired_state, desired_type = self.get_desired_state_and_type(instance_schedule, instance)
 
-                # insert logic here
+                # yamini and jeffs insert logic here
                 asg_set = set([ tag.get('value') for tag in instance.get("Tags") if tag.get('Key') == "aws:autoscaling:groupName" ])
                 autoscaling = self._accounts.session.client('autoscaling')
                 for asg in asg_set:
